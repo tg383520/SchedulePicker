@@ -46,7 +46,9 @@ window.onunhandledrejection = function(event) {
 };
 
 // Initialize Supabase Client
-let supabase = null;
+if (typeof supabase === 'undefined') {
+    var supabase = null;
+}
 try {
     if (typeof CONFIG === 'undefined') {
         showError("config.js 파일을 읽을 수 없습니다. 오타나 빠진 따옴표가 없는지 확인해주세요.");
