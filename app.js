@@ -36,9 +36,13 @@ function showError(msg) {
     console.error(msg);
 }
 
-// Global error handler to help debug UI issues
+// Global error handler
 window.onerror = function(msg, url, line) {
-    showError("코드 실행 중 오류: " + msg + " (줄: " + line + ")");
+    showError("JS 오류: " + msg + " (줄: " + line + ")");
+};
+// async 함수 내부 에러도 잡기
+window.onunhandledrejection = function(event) {
+    showError("Async 오류: " + (event.reason && event.reason.message ? event.reason.message : event.reason));
 };
 
 // Initialize Supabase Client
@@ -141,18 +145,19 @@ const syncManager = {
         }
     },
     broadcast: async function() {
+        // dataToSync를 바깥으로 빼서 if/else 모두에서 사용 가능하도록 해야 함
+        const dataToSync = {
+            participants: state.participants,
+            selections: state.selections,
+            roomName: state.roomName
+        };
         if (CONFIG.LOCAL_MODE_ONLY || !CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY) {
-            const dataToSync = {
-                participants: state.participants,
-                selections: state.selections,
-                roomName: state.roomName
-            };
             if (this.channel) this.channel.postMessage({ type: 'sync', state: dataToSync });
             localStorage.setItem('room_' + state.roomId, JSON.stringify(dataToSync));
         } else {
-            // Upsert state to Supabase
             if (supabase) {
-                await supabase.from('rooms').upsert({ id: state.roomId, state: dataToSync });
+                const { error } = await supabase.from('rooms').upsert({ id: state.roomId, state: dataToSync });
+                if (error) showError("broadcast 실패: " + error.message);
             }
         }
     }
