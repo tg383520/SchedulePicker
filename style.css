@@ -1,0 +1,215 @@
+:root {
+    /* Light Theme (Default) */
+    --bg-color: #f8fafc;
+    --card-bg: rgba(255, 255, 255, 0.85);
+    --text-primary: #0f172a;
+    --text-secondary: #64748b;
+    --border-color: #e2e8f0;
+    --primary-color: #4f46e5;
+    --primary-hover: #4338ca;
+    --danger-color: #ef4444;
+    --success-color: #10b981;
+    --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --glass-border: rgba(255, 255, 255, 0.5);
+    --calendar-hover: rgba(79, 70, 229, 0.05);
+    --selection-my: rgba(79, 70, 229, 0.2);
+}
+
+.theme-dark {
+    --bg-color: #0f172a;
+    --card-bg: rgba(30, 41, 59, 0.85);
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --border-color: #334155;
+    --primary-color: #6366f1;
+    --primary-hover: #818cf8;
+    --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --calendar-hover: rgba(99, 102, 241, 0.15);
+    --selection-my: rgba(99, 102, 241, 0.3);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Utilities */
+.hidden { display: none !important; }
+.screen { display: none; width: 100%; min-height: 100vh; padding: 2rem; animation: fadeIn 0.4s ease; }
+.screen.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Hero / Home */
+.hero-container {
+    max-width: 600px;
+    margin: 15vh auto 0;
+    text-align: center;
+}
+.hero-container h1 { font-size: 3.5rem; margin-bottom: 1rem; background: linear-gradient(135deg, var(--primary-color), #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.hero-container p { font-size: 1.2rem; color: var(--text-secondary); margin-bottom: 2.5rem; }
+.create-room-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    padding: 2rem;
+    border-radius: 1rem;
+    box-shadow: var(--card-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+input {
+    width: 100%;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2); }
+
+button {
+    cursor: pointer;
+    border: none;
+    padding: 1rem 1.5rem;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+#create-room-btn, .primary-btn, #join-room-btn {
+    background-color: var(--primary-color);
+    color: white;
+}
+#create-room-btn:hover, .primary-btn:hover, #join-room-btn:hover { background-color: var(--primary-hover); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); }
+
+/* Room Header */
+.room-header {
+    max-width: 1200px;
+    margin: 0 auto 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.room-header h1 { font-size: 2rem; }
+.room-subtitle { color: var(--text-secondary); margin-top: 0.25rem;}
+.header-actions { display: flex; gap: 1rem; align-items: center; }
+
+/* Theme Switcher */
+.theme-switcher {
+    display: flex;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 2rem;
+    overflow: hidden;
+}
+.theme-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    border-radius: 0;
+}
+.theme-btn.active { background: var(--primary-color); color: white; }
+
+/* Room Content Layout */
+.room-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 2rem;
+    align-items: start;
+}
+@media (max-width: 900px) { .room-content { grid-template-columns: 1fr; } }
+
+/* Cards */
+.card {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    box-shadow: var(--card-shadow);
+    margin-bottom: 1.5rem;
+}
+.card h3 { margin-bottom: 1rem; font-size: 1.25rem; }
+
+/* Calendar */
+.calendar-section {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 1rem;
+    padding: 2rem;
+    box-shadow: var(--card-shadow);
+}
+.calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.calendar-header button { background: var(--bg-color); color: var(--text-primary); font-size: 1.25rem; padding: 0.5rem 1rem; border: 1px solid var(--border-color); border-radius: 0.5rem; }
+.calendar-header button:hover { border-color: var(--primary-color); color: var(--primary-color); }
+.calendar-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem; }
+
+.calendar-cell {
+    aspect-ratio: 1;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+    background: var(--card-bg);
+}
+.calendar-cell:not(.empty):not(.past-date):hover { border-color: var(--primary-color); background-color: var(--calendar-hover); transform: scale(1.02); }
+.calendar-cell.empty { border: none; cursor: default; background: transparent; }
+.calendar-cell.past-date { opacity: 0.4; cursor: not-allowed; background: var(--bg-color); }
+.calendar-cell .date-num { font-weight: 500; margin-bottom: 0.25rem; font-size: 0.875rem; z-index: 2; position: relative; }
+
+/* Selection Bars Container */
+.bars-container { display: flex; flex-direction: column; gap: 2px; width: 100%; margin-top: auto; z-index: 2; position: relative; }
+.bar { height: 4px; border-radius: 2px; width: 100%; transition: width 0.3s, opacity 0.3s; }
+.bar.my-selection { height: 6px; box-shadow: 0 0 4px currentColor; }
+
+/* Selected by me background highlight */
+.calendar-cell.selected-by-me { background-color: var(--selection-my); border-color: var(--primary-color); }
+
+/* Sidebar Lists */
+#participants-list { list-style: none; display: flex; flex-direction: column; gap: 0.75rem; }
+.participant-item { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 0.5rem; transition: transform 0.2s; }
+.participant-item:hover { transform: translateX(4px); }
+.participant-info { display: flex; align-items: center; gap: 0.75rem; font-weight: 500; }
+.color-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.2); }
+.remove-btn { background: transparent; color: var(--danger-color); padding: 0.25rem; font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.remove-btn:hover { color: #b91c1c; transform: scale(1.2); }
+
+#recommendations-list { list-style: none; display: flex; flex-direction: column; gap: 0.75rem; }
+.recommendation-item { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 0.5rem; border-left: 4px solid var(--primary-color); transition: transform 0.2s; }
+.recommendation-item:hover { transform: translateX(4px); }
+.recommendation-item.rank-1 { border-left-color: #facc15; background: rgba(250, 204, 21, 0.05); }
+.recommendation-date { font-weight: 600; font-size: 1.1rem; }
+.recommendation-count { color: white; background: var(--primary-color); padding: 0.25rem 0.5rem; border-radius: 1rem; font-size: 0.875rem; font-weight: 600; }
+.recommendation-item.rank-1 .recommendation-count { background: #facc15; color: #854d0e; }

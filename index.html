@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="가입 없이 실시간으로 지인들과 약속 날짜를 조율해보세요.">
+    <title>약속날짜 잡기 (Schedule Picker)</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="theme-light">
+    <div id="error-banner" style="display:none; background: #fee2e2; color: #991b1b; padding: 1rem; border-bottom: 2px solid #ef4444; font-weight: bold; white-space: pre-wrap; z-index: 9999; position: relative;"></div>
+    <!-- 메인 화면 (방 생성) -->
+    <div id="home-screen" class="screen active">
+        <div class="hero-container">
+            <h1>우리 언제 만날까? 📅</h1>
+            <p>가입 없이 실시간으로 약속 날짜를 조율해보세요.</p>
+            <div class="create-room-card">
+                <input type="text" id="room-name-input" placeholder="약속 이름을 입력하세요 (예: 연말 모임)">
+                <button id="create-room-btn">방 만들기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 약속 조율 화면 -->
+    <div id="room-screen" class="screen">
+        <header class="room-header">
+            <div>
+                <h1 id="display-room-name">약속 이름</h1>
+                <p class="room-subtitle">원하는 날짜를 모두 선택해주세요.</p>
+            </div>
+            <div class="header-actions">
+                <div class="theme-switcher">
+                    <button class="theme-btn active" data-theme="light">Light</button>
+                    <button class="theme-btn" data-theme="dark">Dark</button>
+                    <button class="theme-btn" data-theme="system">System</button>
+                </div>
+                <button id="copy-link-btn" class="primary-btn">초대 링크 복사</button>
+            </div>
+        </header>
+
+        <main class="room-content">
+            <!-- 좌측: 캘린더 -->
+            <section class="calendar-section">
+                <div class="calendar-header">
+                    <button id="prev-month">&lt;</button>
+                    <h2 id="current-month-year"></h2>
+                    <button id="next-month">&gt;</button>
+                </div>
+                <div class="calendar-grid-header">
+                    <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+                </div>
+                <div id="calendar-grid" class="calendar-grid">
+                    <!-- Javascript로 채워짐 -->
+                </div>
+            </section>
+
+            <!-- 우측: 참가자 및 추천 날짜 -->
+            <aside class="sidebar-section">
+                <!-- 내 이름 등록 / 상태 -->
+                <div class="card participant-form-card">
+                    <h3>내 상태</h3>
+                    <div id="join-form">
+                        <input type="text" id="participant-name-input" placeholder="내 이름 입력" maxlength="15">
+                        <button id="join-room-btn" style="margin-top:0.5rem; width:100%;">참여하기</button>
+                    </div>
+                    <div id="my-status" class="hidden">
+                        <p>현재 <strong id="my-display-name" style="color:var(--primary-color)"></strong>님으로 참여 중입니다.</p>
+                        <p id="host-badge" class="hidden" style="margin-top:0.5rem; font-size:0.875rem; color:var(--success-color);">👑 방장 권한이 있습니다.</p>
+                    </div>
+                </div>
+
+                <!-- 참가자 목록 -->
+                <div class="card participants-list-card">
+                    <h3>참가자 (<span id="participant-count">0</span>)</h3>
+                    <ul id="participants-list">
+                        <!-- Javascript로 채워짐 -->
+                    </ul>
+                </div>
+
+                <!-- 추천 날짜 -->
+                <div class="card recommendations-card">
+                    <h3>추천 날짜 🏆</h3>
+                    <ul id="recommendations-list">
+                        <!-- Javascript로 채워짐 -->
+                    </ul>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
