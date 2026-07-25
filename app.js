@@ -9,7 +9,30 @@ let state = {
     currentMonth: new Date(),
     myParticipantId: null,
     isHost: false,
+    hostId: null, // DB에 저장되는 방장의 participant ID
 };
+
+let isMouseDown = false;
+let isDragging = false;
+let dragAction = null;
+
+// JSON 키 순서와 상관없이 selections 데이터가 동일한지 비교하는 함수
+function areSelectionsEqual(s1, s2) {
+    if (!s1 || !s2) return s1 === s2;
+    const keys1 = Object.keys(s1);
+    const keys2 = Object.keys(s2);
+    if (keys1.length !== keys2.length) return false;
+    for (const k of keys1) {
+        if (!s2[k]) return false;
+        if (s1[k].length !== s2[k].length) return false;
+        const arr1 = s1[k].slice().sort();
+        const arr2 = s2[k].slice().sort();
+        for (let i = 0; i < arr1.length; i++) {
+            if (arr1[i] !== arr2[i]) return false;
+        }
+    }
+    return true;
+}
 
 // Colors for participants
 const COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
@@ -37,11 +60,11 @@ function showError(msg) {
 }
 
 // Global error handler
-window.onerror = function(msg, url, line) {
+window.onerror = function (msg, url, line) {
     showError("JS 오류: " + msg + " (줄: " + line + ")");
 };
 // async 함수 내부 에러도 잡기
-window.onunhandledrejection = function(event) {
+window.onunhandledrejection = function (event) {
     showError("Async 오류: " + (event.reason && event.reason.message ? event.reason.message : event.reason));
 };
 
@@ -66,98 +89,166 @@ try {
 // Sync Manager (Handles LocalStorage, BroadcastChannel, and Supabase)
 const syncManager = {
     channel: null,
-    init: function(roomId) {
+    broadcastTimeout: null,
+
+    init: function (roomId) {
         if (CONFIG.LOCAL_MODE_ONLY || !CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY) {
             console.log("Running in Local Mode (BroadcastChannel + LocalStorage)");
-            // Use BroadcastChannel for local cross-tab sync
             try {
                 this.channel = new BroadcastChannel('room_' + roomId);
                 this.channel.onmessage = (event) => {
                     const data = event.data;
                     if (data.type === 'sync') {
-                        Object.assign(state, data.state);
-                        renderParticipants();
-                        renderCalendar();
-                        renderRecommendations();
+                        this.handleIncomingState(data.state);
                     }
                 };
             } catch (e) {
                 console.warn("BroadcastChannel not supported.");
             }
-            
-            // Listen to localStorage as fallback
+
             window.addEventListener('storage', (e) => {
                 if (e.key === 'room_' + roomId) {
                     const data = JSON.parse(e.newValue);
                     if (data) {
-                        state.participants = data.participants || [];
-                        state.selections = data.selections || {};
-                        state.roomName = data.roomName || state.roomName;
-                        renderParticipants();
-                        renderCalendar();
-                        renderRecommendations();
+                        this.handleIncomingState(data);
                     }
                 }
             });
 
-            // Load initial state
             const stored = localStorage.getItem('room_' + roomId);
             if (stored) {
                 const data = JSON.parse(stored);
                 state.participants = data.participants || [];
                 state.selections = data.selections || {};
                 state.roomName = data.roomName || '약속날짜 조율';
+                state.hostId = data.hostId || null;
             }
         } else {
             console.log("Supabase Mode: Initializing...");
-            
-            // 1. Fetch current state from DB
+
             this.fetchFromSupabase(roomId);
 
-            // 2. Subscribe to realtime changes
             supabase
                 .channel('room_updates_' + roomId)
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, payload => {
                     const newState = payload.new.state;
                     if (newState) {
-                        state.participants = newState.participants || [];
-                        state.selections = newState.selections || {};
-                        state.roomName = newState.roomName || state.roomName;
-                        renderParticipants();
-                        renderCalendar();
-                        renderRecommendations();
+                        this.handleIncomingState(newState);
                     }
                 })
                 .subscribe();
         }
     },
-    fetchFromSupabase: async function(roomId) {
+
+    handleIncomingState: function (newState) {
+        // 사용자가 마우스를 누르거나 드래그 중일 때는 외부 수신 데이터로 덮어쓰지 않음
+        if (isMouseDown) return;
+
+        const myId = state.myParticipantId;
+        const mergedSelections = {};
+
+        // 내 로컬 선택 상태 유지 (빠른 클릭/드래그 시 서버 딜레이로 인한 레이스 조건 및 깜빡임 방지)
+        for (const date in state.selections) {
+            if (myId && state.selections[date].includes(myId)) {
+                mergedSelections[date] = [myId];
+            }
+        }
+
+        // 다른 참가자들의 선택 상태 병합
+        if (newState.selections) {
+            for (const date in newState.selections) {
+                const remoteSelected = newState.selections[date] || [];
+                if (!mergedSelections[date]) {
+                    mergedSelections[date] = [];
+                }
+                remoteSelected.forEach(pId => {
+                    if (pId !== myId && !mergedSelections[date].includes(pId)) {
+                        mergedSelections[date].push(pId);
+                    }
+                });
+            }
+        }
+
+        // 빈 배열 정리
+        for (const date in mergedSelections) {
+            if (mergedSelections[date].length === 0) {
+                delete mergedSelections[date];
+            }
+        }
+
+        const isSameSelections = areSelectionsEqual(state.selections, mergedSelections);
+        const isSameParticipants = JSON.stringify(state.participants) === JSON.stringify(newState.participants);
+        const isSameHost = state.hostId === (newState.hostId || null);
+        const isSameRoomName = state.roomName === newState.roomName;
+
+        if (isSameSelections && isSameParticipants && isSameHost && isSameRoomName) {
+            return; // 내용이 완전히 같으면 UI 재렌더링 무시 (깜빡임 0)
+        }
+
+        const participantsChanged = !isSameParticipants || !isSameHost;
+
+        state.participants = newState.participants || [];
+        state.selections = mergedSelections;
+        state.roomName = newState.roomName || state.roomName;
+        state.hostId = newState.hostId || null;
+
+        if (participantsChanged) {
+            renderParticipants();
+        }
+
+        // 전체 캘린더를 지우지(innerHTML = '') 않고 셀 UI만 부드럽게 업데이트
+        updateAllCellsUI();
+        renderRecommendations();
+    },
+
+    fetchFromSupabase: async function (roomId) {
         if (!supabase) return;
         const { data, error } = await supabase.from('rooms').select('state').eq('id', roomId).single();
         if (data && data.state) {
             state.participants = data.state.participants || [];
             state.selections = data.state.selections || {};
             state.roomName = data.state.roomName || state.roomName;
-            
-            // Update UI with fetched state
+            state.hostId = data.state.hostId || null;
+
+            if (state.isHost && state.myParticipantId && !state.hostId) {
+                state.hostId = state.myParticipantId;
+                this.broadcastImmediate();
+            }
+
             document.getElementById('display-room-name').textContent = state.roomName;
             renderParticipants();
             renderCalendar();
             renderRecommendations();
         }
     },
-    broadcast: async function() {
-        // dataToSync를 바깥으로 빼서 if/else 모두에서 사용 가능하도록 해야 함
+
+    broadcast: function () {
+        if (this.broadcastTimeout) {
+            clearTimeout(this.broadcastTimeout);
+        }
+        // 빠른 연타/드래그 통신 폭주 방지를 위해 200ms 디바운스 적용
+        this.broadcastTimeout = setTimeout(() => {
+            this.broadcastImmediate();
+        }, 200);
+    },
+
+    broadcastImmediate: async function () {
+        if (this.broadcastTimeout) {
+            clearTimeout(this.broadcastTimeout);
+            this.broadcastTimeout = null;
+        }
         const dataToSync = {
             participants: state.participants,
             selections: state.selections,
-            roomName: state.roomName
+            roomName: state.roomName,
+            hostId: state.hostId
         };
+
         if (CONFIG.LOCAL_MODE_ONLY || !CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY) {
             if (this.channel) this.channel.postMessage({ type: 'sync', state: dataToSync });
             localStorage.setItem('room_' + state.roomId, JSON.stringify(dataToSync));
         } else {
-            if (supabase) {
+            if (supabase && state.roomId) {
                 const { error } = await supabase.from('rooms').upsert({ id: state.roomId, state: dataToSync });
                 if (error) showError("broadcast 실패: " + error.message);
             }
@@ -180,19 +271,25 @@ function initApp() {
         state.roomId = roomId;
         document.getElementById('home-screen').classList.remove('active');
         document.getElementById('room-screen').classList.add('active');
-        
+
         // Load local user settings
         state.myParticipantId = localStorage.getItem('my_id_' + roomId);
         state.isHost = localStorage.getItem('host_' + roomId) === 'true';
 
         syncManager.init(roomId);
-        
+
         if (state.myParticipantId) {
             document.getElementById('join-form').classList.add('hidden');
             document.getElementById('my-status').classList.remove('hidden');
             const me = state.participants.find(p => p.id === state.myParticipantId);
-            if(me) {
+            if (me) {
                 document.getElementById('my-display-name').textContent = me.name;
+
+                // 내가 방장인데 DB 상에 hostId가 없다면 등록 후 브로드캐스트
+                if (state.isHost && !state.hostId) {
+                    state.hostId = state.myParticipantId;
+                    syncManager.broadcast();
+                }
             } else {
                 // Not in the room participants anymore (kicked or deleted)
                 state.myParticipantId = null;
@@ -207,9 +304,9 @@ function initApp() {
         }
 
         document.getElementById('display-room-name').textContent = state.roomName || '새로운 약속';
-        
+
         state.currentMonth.setDate(1); // Set to 1st of month to avoid overflow bugs
-        
+
         renderParticipants();
         renderCalendar();
         renderRecommendations();
@@ -225,10 +322,10 @@ function setupEventListeners() {
         try {
             const name = document.getElementById('room-name-input').value.trim() || '새로운 약속';
             const newRoomId = generateUUID();
-            
+
             // Save host token
             localStorage.setItem('host_' + newRoomId, 'true');
-            
+
             const initialState = {
                 roomName: name,
                 participants: [],
@@ -267,6 +364,18 @@ function setupEventListeners() {
         });
     });
 
+    // Global mouseup listener for drag and click select
+    window.addEventListener('mouseup', () => {
+        if (isMouseDown) {
+            isMouseDown = false;
+            isDragging = false;
+            dragStartCell = null;
+            dragAction = null;
+            // 200ms 디바운스를 통해 빠른 연속 클릭/드래그 시에도 네트워크 요청을 1회로 통합
+            syncManager.broadcast();
+        }
+    });
+
     // Room: Join
     document.getElementById('join-room-btn').addEventListener('click', () => {
         const name = document.getElementById('participant-name-input').value.trim();
@@ -274,16 +383,21 @@ function setupEventListeners() {
 
         const newId = generateUUID();
         const color = getColor(newId);
-        
+
         state.participants.push({ id: newId, name, color });
         state.myParticipantId = newId;
-        
+
         localStorage.setItem('my_id_' + state.roomId, newId);
-        
+
+        // 내가 방장인 경우 hostId로 지정
+        if (state.isHost) {
+            state.hostId = newId;
+        }
+
         document.getElementById('join-form').classList.add('hidden');
         document.getElementById('my-status').classList.remove('hidden');
         document.getElementById('my-display-name').textContent = name;
-        
+
         syncManager.broadcast();
         renderParticipants();
     });
@@ -293,7 +407,7 @@ function setupEventListeners() {
         state.currentMonth.setMonth(state.currentMonth.getMonth() - 1);
         renderCalendar();
     });
-    
+
     document.getElementById('next-month').addEventListener('click', () => {
         state.currentMonth.setMonth(state.currentMonth.getMonth() + 1);
         renderCalendar();
@@ -303,44 +417,45 @@ function setupEventListeners() {
 function renderCalendar() {
     const grid = document.getElementById('calendar-grid');
     grid.innerHTML = '';
-    
+
     const year = state.currentMonth.getFullYear();
     const month = state.currentMonth.getMonth();
-    
+
     document.getElementById('current-month-year').textContent = `${year}년 ${month + 1}월`;
-    
+
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
+
     const today = new Date();
-    today.setHours(0,0,0,0);
-    
+    today.setHours(0, 0, 0, 0);
+
     // Empty cells before start
     for (let i = 0; i < firstDay; i++) {
         const cell = document.createElement('div');
         cell.className = 'calendar-cell empty';
         grid.appendChild(cell);
     }
-    
+
     // Days
     for (let i = 1; i <= daysInMonth; i++) {
         const cell = document.createElement('div');
-        const dateStr = `${year}-${String(month+1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
         const cellDate = new Date(year, month, i);
-        
+
         cell.className = 'calendar-cell';
+        cell.dataset.date = dateStr; // data-date 추가
         if (cellDate < today) cell.classList.add('past-date');
-        
+
         const numSpan = document.createElement('span');
         numSpan.className = 'date-num';
         numSpan.textContent = i;
         cell.appendChild(numSpan);
-        
+
         const barsContainer = document.createElement('div');
         barsContainer.className = 'bars-container';
-        
+
         const selectedBy = state.selections[dateStr] || [];
-        
+
         selectedBy.forEach(pId => {
             const p = state.participants.find(x => x.id === pId);
             if (p) {
@@ -354,66 +469,152 @@ function renderCalendar() {
                 barsContainer.appendChild(bar);
             }
         });
-        
+
         cell.appendChild(barsContainer);
-        
-        // Click to toggle
+
+        // 마우스 클릭 및 드래그 선택 기능 구현
         if (cellDate >= today) {
-            cell.addEventListener('click', () => toggleSelection(dateStr));
+            cell.addEventListener('mousedown', (e) => {
+                if (!state.myParticipantId) {
+                    alert('먼저 이름을 입력하고 참여해주세요!');
+                    const input = document.getElementById('participant-name-input');
+                    if (input) input.focus();
+                    return;
+                }
+                isMouseDown = true;
+                isDragging = false;
+                dragStartCell = dateStr;
+
+                const selectedBy = state.selections[dateStr] || [];
+                const isSelected = selectedBy.includes(state.myParticipantId);
+                dragAction = isSelected ? 'deselect' : 'select';
+
+                applyDragAction(dateStr);
+                e.preventDefault(); // 텍스트 블록 지정 방지
+            });
+
+            cell.addEventListener('mouseenter', () => {
+                if (isMouseDown) {
+                    isDragging = true;
+                    applyDragAction(dateStr);
+                }
+            });
+
+            cell.addEventListener('dragstart', (e) => {
+                e.preventDefault();
+            });
         }
-        
+
         grid.appendChild(cell);
     }
 }
 
-function toggleSelection(dateStr) {
-    if (!state.myParticipantId) {
-        alert('먼저 이름을 입력하고 참여해주세요!');
-        document.getElementById('participant-name-input').focus();
-        return;
+// 캘린더의 모든 셀 UI를 부드럽게 일괄 업데이트 (DOM 재구성 없음)
+function updateAllCellsUI() {
+    document.querySelectorAll('.calendar-cell[data-date]').forEach(cell => {
+        updateCellUI(cell.dataset.date);
+    });
+}
+
+// 개별 셀 UI만 부드럽고 가볍게 갱신하는 헬퍼 함수 (DOM 재생성 방지)
+function updateCellUI(dateStr) {
+    const cell = document.querySelector(`.calendar-cell[data-date="${dateStr}"]`);
+    if (!cell) return;
+
+    let barsContainer = cell.querySelector('.bars-container');
+    if (!barsContainer) {
+        barsContainer = document.createElement('div');
+        barsContainer.className = 'bars-container';
+        cell.appendChild(barsContainer);
     }
-    
+
+    barsContainer.innerHTML = '';
+    cell.classList.remove('selected-by-me');
+
+    const selectedBy = state.selections[dateStr] || [];
+    selectedBy.forEach(pId => {
+        const p = state.participants.find(x => x.id === pId);
+        if (p) {
+            const bar = document.createElement('div');
+            bar.className = 'bar';
+            bar.style.backgroundColor = p.color;
+            if (pId === state.myParticipantId) {
+                bar.classList.add('my-selection');
+                cell.classList.add('selected-by-me');
+            }
+            barsContainer.appendChild(bar);
+        }
+    });
+}
+
+// 드래그/클릭 액션 처리 함수
+function applyDragAction(dateStr) {
+    if (!state.myParticipantId) return;
+
     if (!state.selections[dateStr]) {
         state.selections[dateStr] = [];
     }
-    
+
     const index = state.selections[dateStr].indexOf(state.myParticipantId);
-    if (index > -1) {
-        state.selections[dateStr].splice(index, 1);
-        if(state.selections[dateStr].length === 0) delete state.selections[dateStr];
-    } else {
-        state.selections[dateStr].push(state.myParticipantId);
+    let changed = false;
+
+    if (dragAction === 'select') {
+        if (index === -1) {
+            state.selections[dateStr].push(state.myParticipantId);
+            changed = true;
+        }
+    } else if (dragAction === 'deselect') {
+        if (index > -1) {
+            state.selections[dateStr].splice(index, 1);
+            if (state.selections[dateStr].length === 0) {
+                delete state.selections[dateStr];
+            }
+            changed = true;
+        }
     }
-    
-    syncManager.broadcast();
-    renderCalendar();
-    renderRecommendations();
+
+    if (changed) {
+        updateCellUI(dateStr);
+        syncManager.broadcast();
+        renderRecommendations();
+    }
 }
 
 function renderParticipants() {
     const list = document.getElementById('participants-list');
     list.innerHTML = '';
-    
+
     document.getElementById('participant-count').textContent = state.participants.length;
-    
+
     state.participants.forEach(p => {
         const li = document.createElement('li');
         li.className = 'participant-item';
-        
+
         const info = document.createElement('div');
         info.className = 'participant-info';
-        
+
         const dot = document.createElement('div');
         dot.className = 'color-dot';
         dot.style.backgroundColor = p.color;
-        
+
         const nameNode = document.createTextNode(p.id === state.myParticipantId ? p.name + ' (나)' : p.name);
-        
+
         info.appendChild(dot);
         info.appendChild(nameNode);
+
+        // 방장(hostId) 표시를 이름 옆에 왕관으로 추가
+        if (state.hostId === p.id) {
+            const crown = document.createElement('span');
+            crown.style.marginLeft = '4px';
+            crown.textContent = '👑';
+            crown.title = '방장';
+            info.appendChild(crown);
+        }
+
         li.appendChild(info);
-        
-        if (state.isHost) {
+
+        // 방장은 자신(myParticipantId)은 삭제할 수 없음
+        if (state.isHost && p.id !== state.myParticipantId) {
             const removeBtn = document.createElement('button');
             removeBtn.className = 'remove-btn';
             removeBtn.innerHTML = '&times;';
@@ -421,21 +622,25 @@ function renderParticipants() {
             removeBtn.onclick = () => removeParticipant(p.id);
             li.appendChild(removeBtn);
         }
-        
+
         list.appendChild(li);
     });
 }
 
 function removeParticipant(id) {
-    if(!confirm('해당 참가자와 선택한 일정을 모두 삭제하시겠습니까?')) return;
-    
+    if (id === state.myParticipantId) {
+        alert('방장 자신은 삭제할 수 없습니다!');
+        return;
+    }
+    if (!confirm('해당 참가자와 선택한 일정을 모두 삭제하시겠습니까?')) return;
+
     state.participants = state.participants.filter(p => p.id !== id);
-    
+
     for (const date in state.selections) {
         state.selections[date] = state.selections[date].filter(pId => pId !== id);
         if (state.selections[date].length === 0) delete state.selections[date];
     }
-    
+
     // If I deleted myself
     if (id === state.myParticipantId) {
         state.myParticipantId = null;
@@ -443,7 +648,7 @@ function removeParticipant(id) {
         document.getElementById('join-form').classList.remove('hidden');
         document.getElementById('my-status').classList.add('hidden');
     }
-    
+
     syncManager.broadcast();
     renderParticipants();
     renderCalendar();
@@ -453,44 +658,47 @@ function removeParticipant(id) {
 function renderRecommendations() {
     const list = document.getElementById('recommendations-list');
     list.innerHTML = '';
-    
+
     if (state.participants.length === 0) {
         list.innerHTML = '<li style="color:var(--text-secondary); text-align:center; padding: 1rem;">참가자가 없습니다.</li>';
         return;
     }
-    
+
     const counts = [];
     for (const date in state.selections) {
-        counts.push({ date, count: state.selections[date].length });
+        const count = state.selections[date].length;
+        if (count > 1) { // 1명만 선택한 날짜는 제외 (2명 이상만 추천)
+            counts.push({ date, count });
+        }
     }
-    
+
     counts.sort((a, b) => b.count - a.count);
-    
+
     const topCounts = counts.slice(0, 5);
-    
+
     if (topCounts.length === 0) {
-        list.innerHTML = '<li style="color:var(--text-secondary); text-align:center; padding: 1rem;">선택된 날짜가 없습니다.</li>';
+        list.innerHTML = '<li style="color:var(--text-secondary); text-align:center; padding: 1rem;">2명 이상 가능한 날짜가 없습니다.</li>';
         return;
     }
-    
+
     topCounts.forEach((item, index) => {
         const li = document.createElement('li');
         li.className = 'recommendation-item';
         if (index === 0 && item.count === state.participants.length && item.count > 1) {
             li.classList.add('rank-1');
         }
-        
+
         const dateObj = new Date(item.date);
-        const dateStr = `${dateObj.getMonth()+1}월 ${dateObj.getDate()}일`;
-        
+        const dateStr = `${dateObj.getMonth() + 1}월 ${dateObj.getDate()}일`;
+
         const dateEl = document.createElement('span');
         dateEl.className = 'recommendation-date';
         dateEl.textContent = dateStr;
-        
+
         const countEl = document.createElement('span');
         countEl.className = 'recommendation-count';
         countEl.textContent = `${item.count}명 가능`;
-        
+
         li.appendChild(dateEl);
         li.appendChild(countEl);
         list.appendChild(li);
@@ -500,7 +708,7 @@ function renderRecommendations() {
 function setupTheme() {
     const savedTheme = localStorage.getItem('theme') || 'system';
     applyTheme(savedTheme);
-    
+
     const btns = document.querySelectorAll('.theme-btn');
     btns.forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -508,7 +716,7 @@ function setupTheme() {
             applyTheme(theme);
         });
     });
-    
+
     // Listen to OS changes
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
         if (localStorage.getItem('theme') === 'system') {
@@ -521,7 +729,7 @@ function applyTheme(theme) {
     localStorage.setItem('theme', theme);
     document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
     document.querySelector(`.theme-btn[data-theme="${theme}"]`).classList.add('active');
-    
+
     if (theme === 'system') {
         const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         document.body.className = isDark ? 'theme-dark' : 'theme-light';

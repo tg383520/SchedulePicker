@@ -1,20 +1,25 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="가입 없이 실시간으로 지인들과 약속 날짜를 조율해보세요.">
     <title>약속날짜 잡기 (Schedule Picker)</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
+
 <body class="theme-light">
-    <div id="error-banner" style="display:none; background: #fee2e2; color: #991b1b; padding: 1rem; border-bottom: 2px solid #ef4444; font-weight: bold; white-space: pre-wrap; z-index: 9999; position: relative;"></div>
+    <div id="error-banner"
+        style="display:none; background: #fee2e2; color: #991b1b; padding: 1rem; border-bottom: 2px solid #ef4444; font-weight: bold; white-space: pre-wrap; z-index: 9999; position: relative;">
+    </div>
     <!-- 메인 화면 (방 생성) -->
     <div id="home-screen" class="screen active">
         <div class="hero-container">
-            <h1>우리 언제 만날까?</h1>
+            <h1>Simple Schedule Picker</h1>
             <p>가입 없이 실시간으로 약속 날짜를 조율해보세요.</p>
             <div class="create-room-card">
                 <input type="text" id="room-name-input" placeholder="약속 이름을 입력하세요 (예: 연말 모임)">
@@ -49,7 +54,13 @@
                     <button id="next-month">&gt;</button>
                 </div>
                 <div class="calendar-grid-header">
-                    <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+                    <div>일</div>
+                    <div>월</div>
+                    <div>화</div>
+                    <div>수</div>
+                    <div>목</div>
+                    <div>금</div>
+                    <div>토</div>
                 </div>
                 <div id="calendar-grid" class="calendar-grid">
                     <!-- Javascript로 채워짐 -->
@@ -67,7 +78,9 @@
                     </div>
                     <div id="my-status" class="hidden">
                         <p>현재 <strong id="my-display-name" style="color:var(--primary-color)"></strong>님으로 참여 중입니다.</p>
-                        <p id="host-badge" class="hidden" style="margin-top:0.5rem; font-size:0.875rem; color:var(--success-color);">👑 방장 권한이 있습니다.</p>
+                        <p id="host-badge" class="hidden"
+                            style="margin-top:0.5rem; font-size:0.875rem; color:var(--success-color);">👑 방장 권한이 있습니다.
+                        </p>
                     </div>
                 </div>
 
@@ -95,4 +108,5 @@
     <script src="config.js"></script>
     <script src="app.js"></script>
 </body>
+
 </html>
