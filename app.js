@@ -376,6 +376,42 @@ function setupEventListeners() {
         }
     });
 
+    // Global touchmove listener — 손가락이 어느 셀 위에 있는지 elementFromPoint로 탐색
+    window.addEventListener('touchmove', (e) => {
+        if (!isMouseDown) return;
+        isDragging = true;
+        const touch = e.touches[0];
+        // 현재 손가락 위치의 최상위 요소 탐색
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        // .calendar-cell[data-date] 또는 그 자식(date-num, bars-container 등)
+        const cell = el && (el.closest('.calendar-cell[data-date]') || (el.dataset && el.dataset.date ? el : null));
+        if (cell && cell.dataset.date) {
+            applyDragAction(cell.dataset.date);
+        }
+    }, { passive: true });
+
+    // Global touchend listener — mouseup과 동일한 역할
+    window.addEventListener('touchend', () => {
+        if (isMouseDown) {
+            isMouseDown = false;
+            isDragging = false;
+            dragStartCell = null;
+            dragAction = null;
+            syncManager.broadcast();
+        }
+    });
+
+    // touchcancel도 처리 (전화 수신 등으로 터치가 강제 종료될 때)
+    window.addEventListener('touchcancel', () => {
+        if (isMouseDown) {
+            isMouseDown = false;
+            isDragging = false;
+            dragStartCell = null;
+            dragAction = null;
+            syncManager.broadcast();
+        }
+    });
+
     // Room: Join
     document.getElementById('join-room-btn').addEventListener('click', () => {
         const name = document.getElementById('participant-name-input').value.trim();
@@ -474,6 +510,7 @@ function renderCalendar() {
 
         // 마우스 클릭 및 드래그 선택 기능 구현
         if (cellDate >= today) {
+            // --- 마우스 (PC) ---
             cell.addEventListener('mousedown', (e) => {
                 if (!state.myParticipantId) {
                     alert('먼저 이름을 입력하고 참여해주세요!');
@@ -503,6 +540,27 @@ function renderCalendar() {
             cell.addEventListener('dragstart', (e) => {
                 e.preventDefault();
             });
+
+            // --- 터치 (모바일/태블릿) ---
+            cell.addEventListener('touchstart', (e) => {
+                if (!state.myParticipantId) {
+                    alert('먼저 이름을 입력하고 참여해주세요!');
+                    const input = document.getElementById('participant-name-input');
+                    if (input) input.focus();
+                    return;
+                }
+                isMouseDown = true;
+                isDragging = false;
+                dragStartCell = dateStr;
+
+                const selectedBy = state.selections[dateStr] || [];
+                const isSelected = selectedBy.includes(state.myParticipantId);
+                dragAction = isSelected ? 'deselect' : 'select';
+
+                applyDragAction(dateStr);
+                // 스크롤 방지 (날짜 드래그 선택 의도로 처리)
+                e.preventDefault();
+            }, { passive: false });
         }
 
         grid.appendChild(cell);
