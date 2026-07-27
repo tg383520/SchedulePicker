@@ -15,6 +15,10 @@ let state = {
 let isMouseDown = false;
 let isDragging = false;
 let dragAction = null;
+let touchStartDate = null;
+let touchStartApplied = false;
+let longPressTimer = null;
+let longPressTriggered = false;
 
 // JSON 키 순서와 상관없이 selections 데이터가 동일한지 비교하는 함수
 function areSelectionsEqual(s1, s2) {
@@ -39,8 +43,104 @@ const COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4'
 const getColor = (id) => {
     let hash = 0;
     for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
-    return COLORS[Math.abs(hash) % COLORS.length];
+    const startIndex = Math.abs(hash) % COLORS.length;
+    const usedColors = new Set(state.participants.map(participant => participant.color));
+
+    for (let offset = 0; offset < COLORS.length; offset++) {
+        const color = COLORS[(startIndex + offset) % COLORS.length];
+        if (!usedColors.has(color)) return color;
+    }
+    return COLORS[startIndex];
 };
+
+function normalizeParticipantName(name) {
+    return name.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR');
+}
+
+function renderSelectionIndicators(container, selectedBy, cell) {
+    container.innerHTML = '';
+    container.classList.toggle('compact-indicators', selectedBy.length >= 6);
+
+    const activeSelectionCount = selectedBy.filter(pId =>
+        state.participants.some(participant => participant.id === pId)
+    ).length;
+    const countLabel = cell.querySelector('.selection-count');
+    if (countLabel) {
+        countLabel.textContent = activeSelectionCount;
+        countLabel.hidden = activeSelectionCount === 0;
+    }
+
+    selectedBy.forEach(pId => {
+        const participant = state.participants.find(p => p.id === pId);
+        if (!participant) return;
+
+        const indicator = document.createElement('div');
+        indicator.className = 'bar';
+        indicator.style.backgroundColor = participant.color;
+        if (pId === state.myParticipantId) {
+            indicator.classList.add('my-selection');
+            cell.classList.add('selected-by-me');
+        }
+        container.appendChild(indicator);
+    });
+}
+
+function clearLongPressTimer() {
+    if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+    }
+}
+
+function openSelectionModal(dateStr) {
+    const modal = document.getElementById('selection-modal');
+    const calendar = document.querySelector('.calendar-section');
+    const title = document.getElementById('selection-modal-date');
+    const list = document.getElementById('selection-modal-list');
+    if (!modal || !calendar || !title || !list) return;
+
+    const date = new Date(`${dateStr}T00:00:00`);
+    title.textContent = `${date.getMonth() + 1}월 ${date.getDate()}일`;
+    list.innerHTML = '';
+
+    const selectedParticipants = (state.selections[dateStr] || [])
+        .map(id => state.participants.find(participant => participant.id === id))
+        .filter(Boolean);
+
+    if (selectedParticipants.length === 0) {
+        list.innerHTML = '<li class="selection-modal-empty">아직 선택한 사람이 없습니다.</li>';
+    } else {
+        selectedParticipants.forEach(participant => {
+            const item = document.createElement('li');
+            item.className = 'selection-modal-participant';
+
+            const color = document.createElement('span');
+            color.className = 'selection-modal-color';
+            color.style.backgroundColor = participant.color;
+
+            const name = document.createElement('span');
+            name.textContent = participant.id === state.myParticipantId
+                ? `${participant.name} (나)`
+                : participant.name;
+
+            item.append(color, name);
+            list.appendChild(item);
+        });
+    }
+
+    const rect = calendar.getBoundingClientRect();
+    const modalWidth = rect.width * 0.65;
+    const modalHeight = rect.height * 0.65;
+    modal.style.top = `${rect.top + (rect.height - modalHeight) / 2}px`;
+    modal.style.left = `${rect.left + (rect.width - modalWidth) / 2}px`;
+    modal.style.width = `${modalWidth}px`;
+    modal.style.height = `${modalHeight}px`;
+    modal.classList.remove('hidden');
+}
+
+function closeSelectionModal() {
+    document.getElementById('selection-modal')?.classList.add('hidden');
+}
 
 // UUID - Safe fallback for insecure contexts (e.g., testing on mobile via local IP)
 const generateUUID = () => {
@@ -378,8 +478,13 @@ function setupEventListeners() {
 
     // Global touchmove listener — 손가락이 어느 셀 위에 있는지 elementFromPoint로 탐색
     window.addEventListener('touchmove', (e) => {
-        if (!isMouseDown) return;
+        if (!isMouseDown || longPressTriggered) return;
+        clearLongPressTimer();
         isDragging = true;
+        if (!touchStartApplied && touchStartDate) {
+            applyDragAction(touchStartDate);
+            touchStartApplied = true;
+        }
         const touch = e.touches[0];
         // 현재 손가락 위치의 최상위 요소 탐색
         const el = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -392,30 +497,59 @@ function setupEventListeners() {
 
     // Global touchend listener — mouseup과 동일한 역할
     window.addEventListener('touchend', () => {
+        clearLongPressTimer();
+        if (longPressTriggered) {
+            longPressTriggered = false;
+            touchStartDate = null;
+            touchStartApplied = false;
+            return;
+        }
         if (isMouseDown) {
+            if (!touchStartApplied && touchStartDate) {
+                applyDragAction(touchStartDate);
+            }
             isMouseDown = false;
             isDragging = false;
             dragStartCell = null;
             dragAction = null;
+            touchStartDate = null;
+            touchStartApplied = false;
             syncManager.broadcast();
         }
     });
 
     // touchcancel도 처리 (전화 수신 등으로 터치가 강제 종료될 때)
     window.addEventListener('touchcancel', () => {
+        clearLongPressTimer();
         if (isMouseDown) {
             isMouseDown = false;
             isDragging = false;
             dragStartCell = null;
             dragAction = null;
+            touchStartDate = null;
+            touchStartApplied = false;
             syncManager.broadcast();
         }
+        longPressTriggered = false;
     });
+
+    document.getElementById('close-selection-modal').addEventListener('click', closeSelectionModal);
+    window.addEventListener('scroll', closeSelectionModal, { passive: true });
 
     // Room: Join
     document.getElementById('join-room-btn').addEventListener('click', () => {
         const name = document.getElementById('participant-name-input').value.trim();
         if (!name) return;
+
+        const normalizedName = normalizeParticipantName(name);
+        const hasSameName = state.participants.some(participant =>
+            normalizeParticipantName(participant.name) === normalizedName
+        );
+        if (hasSameName) {
+            alert('이 방에서는 이미 사용 중인 이름입니다. 다른 이름을 입력해 주세요.');
+            document.getElementById('participant-name-input').focus();
+            return;
+        }
 
         const newId = generateUUID();
         const color = getColor(newId);
@@ -436,6 +570,12 @@ function setupEventListeners() {
 
         syncManager.broadcast();
         renderParticipants();
+    });
+
+    document.getElementById('participant-name-input').addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        document.getElementById('join-room-btn').click();
     });
 
     // Calendar navigation
@@ -487,24 +627,17 @@ function renderCalendar() {
         numSpan.textContent = i;
         cell.appendChild(numSpan);
 
+        const countSpan = document.createElement('span');
+        countSpan.className = 'selection-count';
+        countSpan.hidden = true;
+        cell.appendChild(countSpan);
+
         const barsContainer = document.createElement('div');
         barsContainer.className = 'bars-container';
 
         const selectedBy = state.selections[dateStr] || [];
 
-        selectedBy.forEach(pId => {
-            const p = state.participants.find(x => x.id === pId);
-            if (p) {
-                const bar = document.createElement('div');
-                bar.className = 'bar';
-                bar.style.backgroundColor = p.color;
-                if (pId === state.myParticipantId) {
-                    bar.classList.add('my-selection');
-                    cell.classList.add('selected-by-me');
-                }
-                barsContainer.appendChild(bar);
-            }
-        });
+        renderSelectionIndicators(barsContainer, selectedBy, cell);
 
         cell.appendChild(barsContainer);
 
@@ -552,12 +685,23 @@ function renderCalendar() {
                 isMouseDown = true;
                 isDragging = false;
                 dragStartCell = dateStr;
+                touchStartDate = dateStr;
+                touchStartApplied = false;
+                longPressTriggered = false;
 
                 const selectedBy = state.selections[dateStr] || [];
                 const isSelected = selectedBy.includes(state.myParticipantId);
                 dragAction = isSelected ? 'deselect' : 'select';
 
-                applyDragAction(dateStr);
+                clearLongPressTimer();
+                longPressTimer = setTimeout(() => {
+                    if (!isMouseDown || touchStartDate !== dateStr) return;
+                    longPressTriggered = true;
+                    isMouseDown = false;
+                    isDragging = false;
+                    dragAction = null;
+                    openSelectionModal(dateStr);
+                }, 550);
                 // 스크롤 방지 (날짜 드래그 선택 의도로 처리)
                 e.preventDefault();
             }, { passive: false });
@@ -586,23 +730,10 @@ function updateCellUI(dateStr) {
         cell.appendChild(barsContainer);
     }
 
-    barsContainer.innerHTML = '';
     cell.classList.remove('selected-by-me');
 
     const selectedBy = state.selections[dateStr] || [];
-    selectedBy.forEach(pId => {
-        const p = state.participants.find(x => x.id === pId);
-        if (p) {
-            const bar = document.createElement('div');
-            bar.className = 'bar';
-            bar.style.backgroundColor = p.color;
-            if (pId === state.myParticipantId) {
-                bar.classList.add('my-selection');
-                cell.classList.add('selected-by-me');
-            }
-            barsContainer.appendChild(bar);
-        }
-    });
+    renderSelectionIndicators(barsContainer, selectedBy, cell);
 }
 
 // 드래그/클릭 액션 처리 함수
